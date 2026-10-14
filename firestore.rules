@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/wishlist/{productId} {
+      allow read, delete: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'id',
+          'title',
+          'price',
+          'thumbnail',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'id',
+          'title',
+          'price',
+          'thumbnail',
+          'updatedAt'
+        ])
+        && request.resource.data.id is number
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.price is number
+        && request.resource.data.thumbnail is string
+        && request.resource.data.thumbnail.size() <= 2048
+        && request.resource.data.updatedAt is string;
+    }
+  }
+}
