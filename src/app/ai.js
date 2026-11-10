@@ -13,8 +13,8 @@ export default function AIScreen() {
   const recommend = async () => {
     setLoading(true); setError(''); setMatches([]); setExplanation('');
     try {
-      // Giới hạn số sản phẩm gửi lên để prompt và request không quá lớn.
-      const result = await getProducts({ skip: 0, limit: 30 });
+      // Giới hạn 10 sản phẩm gửi lên để prompt gọn và AI phản hồi nhanh nhất.
+      const result = await getProducts({ skip: 0, limit: 10 });
       const ai = await getProductRecommendations({ products: result.products, userNeed: need.trim() });
       // Dùng Map để đổi ID Gemini trả về thành đối tượng sản phẩm đã tải từ API.
       const byId = new Map(result.products.map((p) => [Number(p.id), p]));

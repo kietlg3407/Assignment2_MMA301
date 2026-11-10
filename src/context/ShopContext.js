@@ -11,7 +11,9 @@ export function ShopProvider({ children }) {
   const [cart, setCart] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [ready, setReady] = useState(false);
-  const [firebaseMessage, setFirebaseMessage] = useState('Firebase chưa cấu hình');
+  const [firebaseMessage, setFirebaseMessage] = useState(
+    isFirebaseConfigured ? 'Sẵn sàng đồng bộ với Firebase' : 'Firebase chưa cấu hình',
+  );
 
   useEffect(() => {
     let alive = true;

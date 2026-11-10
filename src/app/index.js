@@ -28,7 +28,11 @@ export default function ProductListScreen() {
     if (refresh) setRefreshing(true); else setLoading(true);
     try {
       const result = await getProducts({ skip: 0, limit: PAGE_SIZE, query: term });
-      setProducts(result.products); setTotal(result.total); setSkip(result.products.length);
+      // Giới hạn chỉ lấy tối đa 10 sản phẩm để danh mục gọn nhẹ
+      const limitedProducts = result.products.slice(0, 10);
+      setProducts(limitedProducts);
+      setTotal(limitedProducts.length);
+      setSkip(limitedProducts.length);
     } catch (e) { setError(e.message || 'Không thể tải sản phẩm.'); }
     finally { setLoading(false); setRefreshing(false); }
   }, [search]);
@@ -36,17 +40,18 @@ export default function ProductListScreen() {
   useEffect(() => { loadFirstPage(search); }, [search, loadFirstPage]);
 
   const loadMore = async () => {
-    // Chặn tải lặp khi request trước chưa xong, hết dữ liệu hoặc đang có lỗi.
-    if (loadingMore || loading || products.length >= total || error) return;
+    // Đã đủ 10 sản phẩm thì dừng, không tải thêm
+    if (loadingMore || loading || products.length >= 10 || error) return;
     setLoadingMore(true);
     try {
       const result = await getProducts({ skip, limit: PAGE_SIZE, query: search });
       setProducts((old) => {
-        // Một số lần onEndReached có thể xảy ra sát nhau; lọc ID trùng trước khi nối trang.
         const seen = new Set(old.map((item) => item.id));
-        return [...old, ...result.products.filter((item) => !seen.has(item.id))];
+        const merged = [...old, ...result.products.filter((item) => !seen.has(item.id))];
+        return merged.slice(0, 10);
       });
-      setSkip((old) => old + result.products.length); setTotal(result.total);
+      setSkip(10);
+      setTotal(10);
     } catch (e) { setError(e.message || 'Không thể tải thêm sản phẩm.'); }
     finally { setLoadingMore(false); }
   };

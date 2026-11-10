@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.join(path.dirname(require.resolve('./serve
 const express = require('express');
 const cors = require('cors');
 
-// Backend giữ Gemini API key; client app chỉ gọi endpoint recommendations.
+// Backend giữ Gemini API key; client app chỉ gọi endpoint recommendations. (v2.1)
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '100kb' }));
@@ -22,19 +22,48 @@ app.post('/api/recommendations', async (req, res) => {
     const products = Array.isArray(req.body.products) ? req.body.products.slice(0, 50) : [];
     if (!userNeed || products.length === 0) return res.status(400).json({ message: 'Cần userNeed và danh sách products.' });
 
-    // Chỉ gửi các trường cần thiết và giới hạn độ dài để prompt không quá lớn.
-    const catalog = products.map((p) => ({ id: Number(p.id), title: String(p.title || '').slice(0, 100), category: String(p.category || ''), price: Number(p.price) || 0, description: String(p.description || '').slice(0, 250) }));
+    // Rút gọn các trường và giới hạn độ dài ký tự để prompt nhỏ gọn, AI phản hồi nhanh nhất.
+    const catalog = products.map((p) => ({
+      id: Number(p.id),
+      title: String(p.title || '').slice(0, 60),
+      category: String(p.category || ''),
+      price: Number(p.price) || 0,
+      description: String(p.description || '').slice(0, 80),
+    }));
     const prompt = `You are a shopping assistant. Select up to 5 products ONLY from this catalog for the user's need. Do not invent IDs. Return JSON only with shape {"productIds":[number],"explanation":"short explanation"}. The explanation must be concise. User need: ${userNeed}\nCatalog JSON: ${JSON.stringify(catalog)}`;
     const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-    // Gọi Gemini từ server để key không bị nhúng vào bundle mobile.
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const raw = await response.json().catch(() => ({}));
-    if (!response.ok) return res.status(502).json({ message: raw.error?.message || `Gemini returned ${response.status}` });
+    let response;
+    let raw = {};
+    const generationConfig = {
+      responseMimeType: 'application/json',
+      temperature: 0.1,
+      maxOutputTokens: 300,
+    };
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      raw = await response.json().catch(() => ({}));
+      if (response.ok) break;
+
+      // Nếu model không hỗ trợ thinkingConfig (HTTP 400), bỏ qua thinkingConfig rồi thử lại
+      if (response.status === 400 && raw.error?.message?.includes('thinkingConfig')) {
+        delete generationConfig.thinkingConfig;
+        continue;
+      }
+
+      // Nếu Google bị quá tải tạm thời (503 / 429), chờ một chút rồi tự động thử lại
+      if ((response.status === 503 || response.status === 429) && attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+        continue;
+      }
+      break;
+    }
+    if (!response || !response.ok) return res.status(502).json({ message: raw.error?.message || `Gemini returned ${response?.status}` });
     const text = raw.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('') || '';
     let parsed;
     // Chỉ tiếp tục nếu model trả JSON hợp lệ theo format yêu cầu.
